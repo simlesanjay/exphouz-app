@@ -1,0 +1,478 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums
+enum Role {
+  CLIENT
+  PROFESSIONAL
+  ADMIN
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  LINKEDIN
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ProjectStatus {
+  Draft
+  Published
+  Archived
+}
+
+enum RequirementStatus {
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+// Models
+
+model User {
+  id                  String        @id @default(uuid())
+  email               String        @unique
+  mobile              String?       @unique
+  passwordHash        String?       // Optional for Google auth users initially
+  
+  name                String?
+  role                Role          @default(CLIENT)
+  authProvider        AuthProvider  @default(EMAIL)
+  
+  emailVerified       DateTime?
+  mobileVerified      DateTime?     // Added
+  image               String?
+  
+  onboardingCompleted Boolean       @default(false)
+  isActive            Boolean       @default(true) // Account Status
+  lastLogin           DateTime?     // Added
+  
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  // Relations
+  professionalProfile ProfessionalProfile?
+  clientProfile       ClientProfile?
+  accounts            Account[]
+  sessions            Session[]
+  
+  @@map("users")
+}
+
+model Account {
+  id                 String  @id @default(uuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Otp {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("otps")
+}
+
+model ProfessionalProfile {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // 1. Basic Profile Information
+  displayName       String?
+  shortBio          String?   @db.Text // "About" section
+  profileImage      String?   // specific to professional profile if different from user
+  
+  city              String?
+  state             String?
+  country           String?   @default("India")
+  pinCode           String?
+  languages         String[]  // Array of strings e.g. ["English", "Hindi"]
+  
+  // 2. Professional Details
+  profession        String[]   // Architect, Interior Designer, etc.
+  specialization    String[]  // Residential, Commercial, etc.
+  experienceYears   Int?
+  qualifications    String?   // Degree/Education
+  certifications    String?
+  gstNumber         String?
+  panNumber         String?   // Business Registration
+  
+  // 3. Firm / Business Information
+  firmName          String?
+  firmType          String?   // Individual, Firm, Company
+  yearEstablished   Int?
+  teamSize          Int?
+  officeAddress     String?   @db.Text
+  website           String?
+  googleBusinessProfile String?
+  
+  // 4. Services (Handled by ProfessionalService relation below)
+  
+  // 5. Project Preferences
+  preferredTypes    String[]  // Home, Office, Retail
+  preferredLocations String[] // Specific cities/areas
+  
+  // 6. Portfolio
+  portfolioImages   String[]  // URLs of uploaded portfolio images
+  budgetMin         Float?    // Minimum project value
+  budgetMax         Float?
+  availability      String?   // Available, Busy, Limited
+  portfolioEnabled  Boolean   @default(true) // Added for enable/disable toggle
+  
+  // 6. Portfolio (Handled by Project relation below)
+  
+  // 7. Pricing & Consultation
+  consultationFee   String?   // Free / Paid / Custom or a numeric value
+  startingPrice     Float?
+  quotationMethod   String?   // Per sq.ft, Lump sum, Percentage
+  siteVisit         Boolean   @default(true)
+  
+  // 8. Verification & Trust
+  verificationStatus VerificationStatus @default(PENDING)
+  identityVerified   Boolean   @default(false)
+  idProofImage       String?   // URL of uploaded Aadhaar card
+  documentsUploaded  Boolean   @default(false)
+  approvedAt         DateTime? // Date of admin approval
+  
+  // 9. Reviews & Stats
+  rating             Float     @default(0)
+  reviewCount        Int       @default(0)
+  responseRate       Float     @default(0) // Percentage
+  responseTime       String?   // e.g. "Within 24 hours"
+  completedProjects  Int       @default(0)
+  
+  // 10. Communication
+  enquiryCount       Int       @default(0)
+  preferredContact   String?   // Chat, Call, Email
+  
+  // 11. Account Settings
+  isActive           Boolean   @default(true)
+  subscriptionPlan   String?   // Free, Pro, Premium
+  
+  // Relations
+  projects           Project[]
+  services           ProfessionalService[]
+  responses          RequirementResponse[]
+  appointments       Appointment[]
+  reviews            Review[]
+  conversations      Conversation[]
+  savedBy            SavedProfessional[]
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  @@map("professional_profiles")
+}
+
+model ClientProfile {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // 1. Basic Information (Extends User)
+  displayName       String?
+  profileImage      String?   // If different from User image
+  
+  city              String?
+  state             String?
+  country           String?   @default("India")
+  pinCode           String?
+  
+  preferredLanguage String?   @default("English")
+  timeZone          String?   @default("IST")
+  
+  preferences       Json?     // Stored preferences: preferredProfessionalType, preferredExperienceLevel, locationRadius, verifiedOnly
+  
+  // Relations
+  postedRequirements Requirement[]
+  appointments       Appointment[]
+  reviews            Review[]
+  conversations      Conversation[]
+  savedProfessionals SavedProfessional[]
+  savedProjects      SavedProject[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@map("client_profiles")
+}
+
+model Category {
+  id            String        @id @default(uuid())
+  name          String        @unique // Architecture, Interior Design, Contractor...
+  subCategories SubCategory[]
+  projects      Project[]
+  
+  @@map("categories")
+}
+
+model SubCategory {
+  id            String    @id @default(uuid())
+  name          String    // Residential Architect, etc.
+  categoryId    String
+  category      Category  @relation(fields: [categoryId], references: [id])
+  
+  professionals ProfessionalService[]
+  
+  @@map("sub_categories")
+}
+
+// Join table for Professionals <-> SubCategories (Services)
+model ProfessionalService {
+  id                String              @id @default(uuid())
+  professionalId    String
+  professional      ProfessionalProfile @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  
+  subCategoryId     String
+  subCategory       SubCategory         @relation(fields: [subCategoryId], references: [id])
+  
+  @@unique([professionalId, subCategoryId])
+  @@map("professional_services")
+}
+
+model Project {
+  id                String    @id @default(uuid())
+  professionalId    String
+  professional      ProfessionalProfile @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  
+  title             String
+  description       String?
+  location          String?
+  budgetRange       String?
+  videoUrl          String?   // Optional video link
+  tags              String[]  // Design Style Tags: Modern, Minimal, etc.
+  
+  categoryId        String?
+  category          Category? @relation(fields: [categoryId], references: [id])
+  
+  status            ProjectStatus @default(Published)
+  
+  images            ProjectImage[]
+  savedBy           SavedProject[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@map("projects")
+}
+
+model ProjectImage {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  url       String
+  caption   String?  // e.g. "Kitchen", "Living Room"
+  isCover   Boolean  @default(false)
+  
+  @@map("project_images")
+}
+
+model Requirement {
+  id              String            @id @default(uuid())
+  clientId        String
+  client          ClientProfile     @relation(fields: [clientId], references: [id])
+  
+  title           String
+  description     String
+
+  projectType     String?
+  propertyType    String?           // Apartment, Villa, etc.
+  propertyArea    String?           // Sq Ft
+  budgetRange     String?
+  timeline        String?
+  location        String?
+  designStyle     String?           // Modern, Minimal, etc.
+  
+  status          RequirementStatus @default(OPEN)
+  
+  responses       RequirementResponse[]
+  conversations   Conversation[]
+  images          RequirementImage[]  // Added relation
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  @@map("requirements")
+}
+
+model RequirementImage {
+  id            String      @id @default(uuid())
+  requirementId String
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  
+  url           String
+  caption       String?
+  
+  @@map("requirement_images")
+}
+
+model RequirementResponse {
+  id             String              @id @default(uuid())
+  requirementId  String
+  requirement    Requirement         @relation(fields: [requirementId], references: [id])
+  
+  professionalId String
+  professional   ProfessionalProfile @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  
+  message        String?
+  status         String              @default("SENT") // SENT, ACCEPTED, REJECTED
+  
+  createdAt      DateTime            @default(now())
+  
+  @@map("requirement_responses")
+}
+
+// === NEW MODELS FOR USER DATA SET ===
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum AppointmentType {
+  CALL
+  VIDEO
+  SITE_VISIT
+}
+
+model Appointment {
+  id              String            @id @default(uuid())
+  clientId        String
+  client          ClientProfile     @relation(fields: [clientId], references: [id])
+  professionalId  String
+  professional    ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  
+  date            DateTime
+  type            AppointmentType
+  status          AppointmentStatus @default(SCHEDULED)
+  notes           String?
+  
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@map("appointments")
+}
+
+model Review {
+  id              String            @id @default(uuid())
+  clientId        String
+  client          ClientProfile     @relation(fields: [clientId], references: [id])
+  professionalId  String
+  professional    ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  
+  rating          Int // 1-5
+  comment         String?
+  projectId       String? // Optional reference
+  
+  createdAt       DateTime          @default(now())
+  
+  @@map("reviews")
+}
+
+model Conversation {
+  id              String            @id @default(uuid())
+  clientId        String
+  client          ClientProfile     @relation(fields: [clientId], references: [id])
+  professionalId  String
+  professional    ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  
+  requirementId   String?
+  requirement     Requirement?      @relation(fields: [requirementId], references: [id])
+  
+  messages        Message[]
+  
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  @@map("conversations")
+}
+
+model Message {
+  id              String        @id @default(uuid())
+  conversationId  String
+  conversation    Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  senderId        String        // User ID
+  content         String
+  read            Boolean       @default(false)
+  
+  createdAt       DateTime      @default(now())
+  
+  @@map("messages")
+}
+
+model SavedProfessional {
+  id              String            @id @default(uuid())
+  clientId        String
+  client          ClientProfile     @relation(fields: [clientId], references: [id])
+  professionalId  String
+  professional    ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  
+  createdAt       DateTime          @default(now())
+  
+  @@unique([clientId, professionalId])
+  @@map("saved_professionals")
+}
+
+model SavedProject {
+  id              String            @id @default(uuid())
+  clientId        String
+  client          ClientProfile     @relation(fields: [clientId], references: [id])
+  projectId       String
+  project         Project           @relation(fields: [projectId], references: [id])
+  
+  createdAt       DateTime          @default(now())
+  
+  @@unique([clientId, projectId])
+  @@map("saved_projects")
+}
